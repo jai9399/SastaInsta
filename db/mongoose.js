@@ -1,8 +1,7 @@
-const mongoose = require('mongoose');
-
-mongoose.connect('mongodb://127.0.0.1/DataSelfie',{
+const mongoose = require('mongoose')
+mongoose.connect('mongodb://127.0.0.1/SastaInsta',{
     useNewUrlParser:true,
+    useCreateIndex:true,
     useFindAndModify:false,
-    useUnifiedTopology:true,
-    useCreateIndex:true
+    useUnifiedTopology:true
 })

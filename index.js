@@ -1,43 +1,98 @@
-const express = require('express')
+const express= require('express')
+const jsonwebtoken = require('jsonwebtoken')
+const app = express();
 const mongoose = require('mongoose')
 const bson = require('bson-objectid')
-const sharp = require('sharp')
-require('./db/mongoose')
-//const http = require('http')
-//const server = new http.createServer(express());
-const User = require('./model/user')
-const app = express();
-app.use(express.json({limit:'2mb'}))
+const fs = require('fs');
+const shell = require('shelljs')
 app.use(express.urlencoded({extended:true,limit:'2mb'}))
-app.use(express.static(__dirname+"/public"))
-const port = process.env.PORT || 3000;
-app.get('/',function(req,res){
-   res.sendFile('C:/Users/Jai Kathuria/Desktop/DataSelfie/public/index.html')
+app.use(express.json({limit:'2mb'}));
+app.use(express.static(__dirname+'/public/'))
+const User = require('./models/user')
+const Image = require('./models/images')
+const path = __dirname+'/public/'
+var user =''
+var token=''
+app.use(function(req,res,next){
+    res.setHeader('Authorization',token)
+    next();
 })
-app.post('/run',async (req,res)=>{
-    const id = bson().toString();
-    var base64Data = req.body.imgvalue.replace(/^data:image\/png;base64,/, "");
-    var img = new Buffer(base64Data,'base64');
-    /*sharp(img).resize(320,320).toBuffer().then((reqbase64)=>{base64data = reqbase64.toString('base64')});*/
-    const buffer = await sharp(img).resize({
-        width:250,
-        height:250
-    }).png().toBuffer();
-    base64Data = buffer.toString('base64');
 
-    require("fs").writeFile(__dirname+"/images/"+id+".png", base64Data, 'base64', function(err) {
-    console.log(err); 
-});
-    req.body.imgvalue =__dirname+"\\images\\"+id+".png";
-    const userdetails = new User(req.body);
-    await userdetails.save()
-    console.log('Saved')
+const auth = async function(req,res,next){
+   const gtoken = res.getHeader('Authorization')
+   if(gtoken==''){
+     return res.send('Please Authenticate')
+   }
+   const decode = jsonwebtoken.verify(gtoken, 'secret') 
+   const user = await User.findOne({_id:decode._id});
+    if(!user){
+      return res.send('Please Authenticate')
+    }
+   req.user = user;
+   console.log('Logged in as '+user)
+   next();
+}
+app.get('/list',auth,async(req,res)=>{
+    res.sendFile(path+'list.html')
 })
-app.get('/lists',async (req,res)=>{
-    const items = await User.find({})
-    console.log(items);
-    res.send(items);
+
+app.get('/home',auth,async(req,res)=>{
+    res.sendFile(path+'home.html')
 })
-app.listen(port,()=>{
-    console.log('Hello')
+app.get('/logout',auth,function(req,res){
+    token = '';
+    user = '';
+    res.send('Logged Out')
+})
+app.post('/login',async(req,res)=>{
+    const user =await User.findOne({username:req.body.username})
+    if(user.password == req.body.password){
+        token = jsonwebtoken.sign({_id:user._id},'secret',{expiresIn:'10 mins'})
+        res.send('logged in')
+    }
+    else{
+        res.send('invalid Credentials')
+    }
+})
+app.get('/signup',async(req,res)=>{
+    res.sendFile(path+'signup.html')
+})
+app.post('/signup',async (req,res)=>{
+    const user = new User(req.body);
+    if(!user){
+       return res.send('Error')
+    }
+    await user.save();
+    token = jsonwebtoken.sign({_id:user._id},'secret',{expiresIn:'10 mins'})
+    res.send('logged in')
+})
+app.get('/',function(req,res){
+    res.sendFile(path+'login.html')
+})
+app.post('/home/images',auth,async function(req,res){
+    const id = bson().toString();
+    const dir = __dirname+"\\images\\"+req.user._id;
+    if(!fs.existsSync(dir)){
+        shell.mkdir('-p',dir)
+    }
+    var base64Data = req.body.imgpath.replace(/^data:image\/png;base64,/, "");
+    fs.writeFile(dir+'\\'+id+".png",base64Data, 'base64', function(err) {
+        console.log(err); 
+    });
+    const js = {
+        mood:req.body.mood,
+        imgpath:req.user._id+'\\'+id+".png",
+        owner:req.user._id
+     }
+    const images = new Image(js);
+    await images.save();
+    res.send('saved')
+})
+app.get('/lists',auth,async function(req,res){
+  const items =await Image.find({owner:req.user._id})
+  console.log(items)
+  res.send(items)
+})
+app.listen(3000,function(){
+ console.log('Hi')
 })
